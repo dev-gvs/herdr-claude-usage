@@ -1,10 +1,10 @@
-# Claude usage
+# Claude Usage
 
 Your Claude plan limits in Herdr's status bar: the 5-hour and weekly usage as two small meters, each with a faint fill showing how much of the window has passed, so you can tell at a glance whether you are ahead of pace. Click it for a popup with every limit, its exact percentage and when it resets.
 
-![Claude usage](preview.png)
+![Claude Usage](preview.png)
 
-This file is the brief: enough to build Claude usage from an empty folder. The files next to it are one build of it. If they don't work on your Herdr, or you want it different, build it again from here.
+This file is the brief: enough to build Claude Usage from an empty folder. The files next to it are one build of it. If they don't work on your Herdr, or you want it different, build it again from here.
 
 ## What you see
 
