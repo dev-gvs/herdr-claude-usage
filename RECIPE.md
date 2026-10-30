@@ -14,7 +14,7 @@ This file is the brief: enough to build Claude usage from an empty folder. The f
   - The used fill is clay: `#b98253` for 5h, `#856144` for 7d. At 80% and above it turns amber `#ffb347` (the percentage too), at 95% and above red `#ff5d6c`.
   - Behind it, a ghost fill in `dim` at 35% opacity shows the share of the window that has already elapsed. A lit fill past the ghost means you are using the limit faster than time passes.
   - Before the first fetch it shows `…`; with no data and an error, `no data`.
-- **The popup**, 300px wide, sized by content, 14px padding, 14px gaps, text 12px in `muted`.
+- **The popup**, 300px wide, right-aligned with the bar and 6px above it, sized by content, 14px padding, 14px gaps, text 12px in `muted`, on `popover` with a 1px `border` and 8px corners.
   - A header: the Claude icon (16px), "Claude usage" in 13px semibold `foreground`, and a "Refresh" button on the right (`dim`, `hover` background on hover).
   - One section per limit the account reports, including weekly limits scoped to one model ("Weekly Opus limit"): the name in `foreground`, the percentage in 18px semibold in the meter's color, a 6px meter, and "resets in 2h 14m, at 17:00" (under 24 hours) or "resets Monday at 09:00" in 11.5px `dim`.
   - A footer: "updated 14:05", or "fetch failed: HTTP 401 · data from 13:55" in `blocked`.
@@ -24,7 +24,7 @@ This file is the brief: enough to build Claude usage from an empty folder. The f
 - Fetches on start, then at most every 5 minutes (a 60-second timer checks when the last fetch was). Every copy shares one result through shared state `"claude-usage"`, so several bars or a bar and the popup don't fetch twice.
 - Stale data (an error, or no successful fetch for 12 minutes) keeps the last numbers but greys the meters to `dim`, drops the ghost fill and dims the icon to 50%. The 12 minutes are one missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
 - Hover shows a tooltip with each bar limit's name, percentage and reset time, plus the last error.
-- Click opens the popup (`kind: "popup"`, without `at`; Herdr places it above the bar). Refresh fetches at once. Esc closes it.
+- Click opens the popup above the bar. Refresh fetches at once. Esc closes it.
 - Agent statuses play no part; there are no animations.
 
 ## Built from
@@ -41,10 +41,10 @@ This file is the brief: enough to build Claude usage from an empty folder. The f
   ```
 
   Prop `border`: `"top"` or `"bottom"` draws a 1px `border` line on that edge, to match a bar beside it.
-- **One view, two roles.** With `props().overlay` set it draws the popup (`openOverlay({ mod: "claude-usage", kind: "popup", width: 300, props: { details: true } })`), otherwise the bar. Only the bar runs the timer.
+- **One view, two roles.** With `props().overlay` set it draws the popup (`openOverlay({ mod: "claude-usage", kind: "popup", frame: "none", width: 300, height, at, props: { details: true, height } })`), otherwise the bar. Only the bar runs the timer.
 - **The data**: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer <token>` and `anthropic-beta: oauth-2025-04-20`, through `fetch`. Newer responses carry `limits: [{ kind, percent, resets_at, scope: { model: { display_name } } }]` with kinds `session`, `weekly_all` and `weekly_scoped`; older ones carry `five_hour` / `seven_day` with `utilization` and `resets_at`. Both are mapped to `{ kind, model, used, resets_at }`. Window lengths for the ghost fill: 5 hours for `session`, 7 days for the weekly kinds.
 - **The token**: Claude Code's own OAuth login, read with `readTextFile` from `~/.claude/.credentials.json` and `~/.claude-work/.credentials.json` (`claudeAiOauth.accessToken`); when both exist, the one with the later `expiresAt` wins, since whichever Claude Code refreshed last holds the live token. The mod never stores, logs or refreshes the token; it sends it only to `api.anthropic.com`.
-- **Herdr functions**: `home`, `readTextFile`, `shared`, `setShared`, `props`, `openOverlay`, `theme`; `image`, `div`, `h_flex`, `v_flex`, `.tooltip`, `.when`.
+- **Herdr functions**: `home`, `readTextFile`, `shared`, `setShared`, `props`, `openOverlay`, `settings`, `theme`; `image`, `div`, `h_flex`, `v_flex`, `.tooltip`, `.when`.
 
 ## Watch out
 
@@ -55,6 +55,7 @@ This file is the brief: enough to build Claude usage from an empty folder. The f
 - `~/.claude-work` is a second Claude Code config dir (`CLAUDE_CONFIG_DIR`); a missing one is skipped. Add or remove dirs in `token()`.
 - The API reports resets a fraction of a second before the hour; round to the minute before printing, or "16:59" shows instead of "17:00".
 - The bar's click handler stops the mouse-down so a `window_drag` status bar doesn't swallow the click.
+- A popup without `at` opens at the pointer and Herdr pushes it back into the window, over the bar. Its height can't be measured before it opens, so the popup is a frameless box of 120 + 90 px per limit (at least 3), capped to the space above the bar, with the card drawn by the mod and pinned to the box's bottom. Herdr sizes a popup to its content, so the root needs an explicit `.h(height)`, not `size_full()`. `at` and the bar's mouse-down `bounds` are in zoomed px, while `width`/`height` are at zoom 1: multiply by `settings().zoom`. Clicks on the empty top of the box don't close the popup.
 - Times are 24-hour and local; days are English.
 
 ## Done when

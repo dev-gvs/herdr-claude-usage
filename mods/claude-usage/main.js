@@ -1,6 +1,6 @@
 import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { home, readTextFile, shared, setShared, props, openOverlay, closeOverlay, theme } from "herdr";
+import { home, readTextFile, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const KEY = "claude-usage";
@@ -11,6 +11,7 @@ const SPAN = { session: 5 * 3600e3, weekly_all: 7 * 86400e3, weekly_scoped: 7 * 
 const BAR = ["session", "weekly_all"];
 const CLAY = { session: "#b98253", weekly_all: "#856144", weekly_scoped: "#856144" };
 const AMBER = "#ffb347", RED = "#ff5d6c";
+const POPUP_W = 300, GAP = 6;
 
 // Both config dirs log in to the same account; whichever Claude Code refreshed last holds the live token.
 async function token() {
@@ -113,6 +114,18 @@ export default class ClaudeUsage extends View {
     return props()?.overlay ? this.details() : this.bar();
   }
 
+  // At the pointer, a popup on a bottom bar gets pushed back into the window over the bar. Its height
+  // can't be measured before it opens, so it is a generous frameless box with the card pinned to its
+  // bottom, just above the bar.
+  open() {
+    const b = this.anchor;
+    const z = Number(settings()?.zoom) || 1;
+    const rows = Math.max(3, shared(KEY)?.windows?.length ?? 0);
+    const height = b ? Math.min(120 + rows * 90, b.y / z - GAP) : 120 + rows * 90;
+    const at = b ? { x: Math.max(0, b.x + b.width - (POPUP_W + GAP) * z), y: b.y - (height + GAP) * z } : undefined;
+    openOverlay({ mod: "claude-usage", kind: "popup", frame: "none", width: POPUP_W, height, at, props: { details: true, height } });
+  }
+
   bar() {
     const t = theme();
     const u = shared(KEY);
@@ -125,8 +138,8 @@ export default class ClaudeUsage extends View {
     return h_flex().id("root").size_full().px(12).gap(12).items_center().bg(t.chrome).text_size(11.8)
       .when(edge === "top", el => el.border_t(1).border_color(t.border))
       .when(edge === "bottom", el => el.border_b(1).border_color(t.border))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click(() => openOverlay({ mod: "claude-usage", kind: "popup", width: 300, props: { details: true } }))
+      .on_mouse_down("left", (e, cx) => { this.anchor = e.bounds; cx.stop_propagation(); })
+      .on_click(() => this.open())
       .tooltip(tip)
       .child(image("icons/claude.svg").size(14).flex_none().opacity(stale ? 0.5 : 1))
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(u?.error ? "no data" : "…")))
@@ -143,7 +156,8 @@ export default class ClaudeUsage extends View {
     const footer = !u?.fetched ? (u?.error ?? "not fetched yet")
       : u.error ? `fetch failed: ${u.error} · data from ${clock(Date.parse(u.fetched))}`
       : `updated ${clock(Date.parse(u.fetched))}`;
-    return v_flex().w_full().p(14).gap(14).text_size(12).text_color(t.muted)
+    return v_flex().w_full().h(props().height ?? 0).justify_end().child(v_flex().w_full().p(14).gap(14).text_size(12).text_color(t.muted)
+      .bg(t.popover).border(1).border_color(t.border).rounded(8)
       .child(h_flex().justify_between().items_center()
         .child(h_flex().gap(8).items_center().child(image("icons/claude.svg").size(16))
           .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Claude usage")))
@@ -155,6 +169,6 @@ export default class ClaudeUsage extends View {
           .child(div().text_size(18).font_semibold().text_color(color(w, stale, t)).child(`${w.used}%`)))
         .child(meter(w, stale, t, 6))
         .child(div().text_size(11.5).text_color(t.dim).child(resets(w)))))
-      .child(div().text_size(11.5).text_color(u?.error ? t.blocked : t.dim).child(footer));
+      .child(div().text_size(11.5).text_color(u?.error ? t.blocked : t.dim).child(footer)));
   }
 }
