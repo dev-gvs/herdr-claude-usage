@@ -15,7 +15,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
   - Behind it, a ghost fill in `dim` at 35% opacity shows the share of the window that has already elapsed. A lit fill past the ghost means you are using the limit faster than time passes.
   - Before the first fetch it shows `…`; with no data and an error, `no data`.
 - **The popup**, 300px wide, right-aligned with the bar and 6px above it, sized by content, 14px padding, 14px gaps, text 12px in `muted`, on `popover` with a 1px `border` and 8px corners.
-  - A header: the Claude icon (16px), "Claude usage" in 13px semibold `foreground`, and a "Refresh" button on the right (`dim`, `hover` background on hover).
+  - A header: the Claude icon (16px), "Claude Usage" in 13px semibold `foreground`, and a "Refresh" button on the right (`dim`, `hover` background on hover).
   - One section per limit the account reports, including weekly limits scoped to one model ("Weekly Opus limit"): the name in `foreground`, the percentage in 18px semibold in the meter's color, a 6px meter, and "resets in 2h 14m, at 17:00" (under 24 hours) or "resets Monday at 09:00" in 11.5px `dim`.
   - A footer: "updated 14:05", or "fetch failed: HTTP 401 · data from 13:55" in `blocked`.
 

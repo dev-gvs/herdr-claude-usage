@@ -160,7 +160,7 @@ export default class ClaudeUsage extends View {
       .bg(t.popover).border(1).border_color(t.border).rounded(8)
       .child(h_flex().justify_between().items_center()
         .child(h_flex().gap(8).items_center().child(image("icons/claude.svg").size(16))
-          .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Claude usage")))
+          .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Claude Usage")))
         .child(div().id("refresh").px(6).py(2).rounded(5).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => cx.spawn(async () => refresh())).child("Refresh")))
       .children((u?.windows ?? []).map(w => v_flex().gap(6)
