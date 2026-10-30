@@ -1,0 +1,160 @@
+import { View, div, image } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+import { home, readTextFile, shared, setShared, props, openOverlay, closeOverlay, theme } from "herdr";
+
+const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const KEY = "claude-usage";
+const EVERY = 5 * 60e3;
+// One missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
+const STALE = 12 * 60e3;
+const SPAN = { session: 5 * 3600e3, weekly_all: 7 * 86400e3, weekly_scoped: 7 * 86400e3 };
+const BAR = ["session", "weekly_all"];
+const CLAY = { session: "#b98253", weekly_all: "#856144", weekly_scoped: "#856144" };
+const AMBER = "#ffb347", RED = "#ff5d6c";
+
+// Both config dirs log in to the same account; whichever Claude Code refreshed last holds the live token.
+async function token() {
+  const found = [];
+  for (const dir of [".claude", ".claude-work"]) {
+    try {
+      const oauth = JSON.parse(await readTextFile(`${home()}/${dir}/.credentials.json`) ?? "null")?.claudeAiOauth;
+      if (oauth?.accessToken) found.push(oauth);
+    } catch {}
+  }
+  found.sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0));
+  if (!found.length) throw new Error("no Claude Code login found");
+  if (found[0].expiresAt && found[0].expiresAt < Date.now()) throw new Error("token expired, use Claude Code to refresh it");
+  return found[0].accessToken;
+}
+
+function windowsOf(data) {
+  if (Array.isArray(data.limits)) {
+    return data.limits.map(l => {
+      const model = l.scope?.model?.display_name;
+      return { kind: l.kind, model, used: l.percent, resets_at: l.resets_at };
+    });
+  }
+  return [["five_hour", "session"], ["seven_day", "weekly_all"]]
+    .filter(([k]) => typeof data[k]?.utilization === "number")
+    .map(([k, kind]) => ({ kind, used: data[k].utilization, resets_at: data[k].resets_at }));
+}
+
+async function refresh() {
+  const prev = shared(KEY) ?? {};
+  const now = new Date().toISOString();
+  try {
+    const res = await fetch(USAGE_URL, {
+      headers: { Authorization: `Bearer ${await token()}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setShared(KEY, { checked: now, fetched: now, error: null, windows: windowsOf(await res.json()) });
+  } catch (e) {
+    setShared(KEY, { ...prev, checked: now, error: String(e?.message ?? e) });
+  }
+}
+
+const short = w => ({ session: "5h", weekly_all: "7d" })[w.kind] ?? `7d ${w.model ?? ""}`.trim();
+const long = w => ({ session: "5-hour limit", weekly_all: "Weekly limit" })[w.kind] ?? `Weekly ${w.model ?? "model"} limit`;
+
+function pace(w) {
+  const end = Date.parse(w.resets_at), span = SPAN[w.kind];
+  if (!end || !span) return null;
+  return Math.min(1, Math.max(0, 1 - (end - Date.now()) / span));
+}
+
+function color(w, stale, t) {
+  if (stale) return t.dim;
+  if (w.used >= 95) return RED;
+  if (w.used >= 80) return AMBER;
+  return CLAY[w.kind] ?? CLAY.weekly_all;
+}
+
+function clock(ms) {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function resets(w) {
+  // The API reports resets a fraction of a second before the hour.
+  const end = Math.round(Date.parse(w.resets_at) / 60e3) * 60e3;
+  if (!end) return "";
+  const left = Math.max(0, end - Date.now());
+  if (left < 24 * 3600e3) {
+    const h = Math.floor(left / 3600e3), m = Math.round((left % 3600e3) / 60e3);
+    return `resets in ${h ? `${h}h ` : ""}${m}m, at ${clock(end)}`;
+  }
+  return `resets ${DAYS[new Date(end).getDay()]} at ${clock(end)}`;
+}
+
+// The elapsed share of the window is drawn as a ghost fill: lit past it means running ahead of pace.
+function meter(w, stale, t, height) {
+  const used = Math.min(100, Math.max(0, w.used ?? 0));
+  const ghost = stale ? null : pace(w);
+  return div().relative().w_full().h(height).rounded(height / 2).bg(t.border)
+    .when(ghost !== null, el => el.child(div().absolute().left(0).top(0).h_full().w(`${ghost * 100}%`).rounded(height / 2).bg(t.dim).opacity(0.35)))
+    .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)));
+}
+
+export default class ClaudeUsage extends View {
+  init(_props, cx) {
+    if (props()?.overlay) return;
+    const tick = cx => {
+      const last = Date.parse(shared(KEY)?.checked ?? "") || 0;
+      if (Date.now() - last >= EVERY) cx.spawn(async () => refresh());
+      cx.notify();
+    };
+    cx.timer.every(60e3, tick);
+    tick(cx);
+  }
+
+  render() {
+    return props()?.overlay ? this.details() : this.bar();
+  }
+
+  bar() {
+    const t = theme();
+    const u = shared(KEY);
+    const stale = !u?.fetched || Boolean(u.error) || Date.now() - Date.parse(u.fetched) > STALE;
+    const shown = BAR.map(kind => u?.windows?.find(w => w.kind === kind)).filter(Boolean);
+    const edge = props()?.border;
+    const tip = shown.length
+      ? shown.map(w => `${long(w)}: ${w.used}%, ${resets(w)}`).join("\n") + (u.error ? `\n${u.error}` : "")
+      : u?.error ?? "Loading Claude usage";
+    return h_flex().id("root").size_full().px(12).gap(12).items_center().bg(t.chrome).text_size(11.8)
+      .when(edge === "top", el => el.border_t(1).border_color(t.border))
+      .when(edge === "bottom", el => el.border_b(1).border_color(t.border))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click(() => openOverlay({ mod: "claude-usage", kind: "popup", width: 300, props: { details: true } }))
+      .tooltip(tip)
+      .child(image("icons/claude.svg").size(14).flex_none().opacity(stale ? 0.5 : 1))
+      .when(!shown.length, el => el.child(div().text_color(t.dim).child(u?.error ? "no data" : "…")))
+      .children(shown.map(w => h_flex().gap(6).items_center().flex_none()
+        .child(div().text_color(t.dim).child(short(w)))
+        .child(div().w(80).child(meter(w, stale, t, 5)))
+        .child(div().w(30).text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))));
+  }
+
+  details() {
+    const t = theme();
+    const u = shared(KEY);
+    const stale = !u?.fetched || Boolean(u.error) || Date.now() - Date.parse(u.fetched) > STALE;
+    const footer = !u?.fetched ? (u?.error ?? "not fetched yet")
+      : u.error ? `fetch failed: ${u.error} · data from ${clock(Date.parse(u.fetched))}`
+      : `updated ${clock(Date.parse(u.fetched))}`;
+    return v_flex().w_full().p(14).gap(14).text_size(12).text_color(t.muted)
+      .child(h_flex().justify_between().items_center()
+        .child(h_flex().gap(8).items_center().child(image("icons/claude.svg").size(16))
+          .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Claude usage")))
+        .child(div().id("refresh").px(6).py(2).rounded(5).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => cx.spawn(async () => refresh())).child("Refresh")))
+      .children((u?.windows ?? []).map(w => v_flex().gap(6)
+        .child(h_flex().justify_between().items_end()
+          .child(div().text_color(t.foreground).child(long(w)))
+          .child(div().text_size(18).font_semibold().text_color(color(w, stale, t)).child(`${w.used}%`)))
+        .child(meter(w, stale, t, 6))
+        .child(div().text_size(11.5).text_color(t.dim).child(resets(w)))))
+      .child(div().text_size(11.5).text_color(u?.error ? t.blocked : t.dim).child(footer));
+  }
+}
