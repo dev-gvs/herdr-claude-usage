@@ -32,15 +32,23 @@ function windowsOf(data) {
   if (Array.isArray(data.limits)) {
     return data.limits.map(l => {
       const model = l.scope?.model?.display_name;
-      return { kind: l.kind, model, used: l.percent, resets_at: l.resets_at };
+      return { kind: l.kind, model, used: Math.round(l.percent ?? 0), resets_at: l.resets_at };
     });
   }
   return [["five_hour", "session"], ["seven_day", "weekly_all"]]
     .filter(([k]) => typeof data[k]?.utilization === "number")
-    .map(([k, kind]) => ({ kind, used: data[k].utilization, resets_at: data[k].resets_at }));
+    .map(([k, kind]) => ({ kind, used: Math.round(data[k].utilization), resets_at: data[k].resets_at }));
 }
 
+// One fetch at a time: a hung request must not stack more behind it.
+let inFlight = false;
 async function refresh() {
+  if (inFlight) return;
+  inFlight = true;
+  try { await refreshOnce(); } finally { inFlight = false; }
+}
+
+async function refreshOnce() {
   const prev = shared(KEY) ?? {};
   const now = new Date().toISOString();
   try {
