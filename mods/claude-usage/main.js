@@ -12,6 +12,10 @@ const BAR = ["session", "weekly_all"];
 const CLAY = { session: "#b98253", weekly_all: "#856144", weekly_scoped: "#856144" };
 const AMBER = "#ffb347", RED = "#ff5d6c";
 const POPUP_W = 300, GAP = 6;
+const POPUP_CLOSED = "claude-usage.popup-closed";
+// A popup's closing and the bar's mouse-down land in one event, at most 1 ms apart when measured,
+// and no deliberate second press comes this quickly.
+const SAME_PRESS = 250;
 
 // Both config dirs log in to the same account; whichever Claude Code refreshed last holds the live token.
 async function token() {
@@ -134,6 +138,10 @@ export default class ClaudeUsage extends View {
     tick(cx);
   }
 
+  async close() {
+    if (props()?.overlay) setShared(POPUP_CLOSED, Date.now());
+  }
+
   render() {
     return props()?.overlay ? this.details() : this.bar();
   }
@@ -150,6 +158,12 @@ export default class ClaudeUsage extends View {
     openOverlay({ mod: "claude-usage", kind: "popup", frame: "none", width: POPUP_W, height, at, props: { details: true, height } });
   }
 
+  // The press that closes the popup also reaches the bar, whose click would open it straight away.
+  toggle() {
+    const closedByThisPress = Math.abs(shared(POPUP_CLOSED) - this.pressed) < SAME_PRESS;
+    if (!closedByThisPress) this.open();
+  }
+
   bar() {
     const t = theme();
     const u = shared(KEY);
@@ -162,8 +176,8 @@ export default class ClaudeUsage extends View {
     return h_flex().id("root").size_full().px(12).gap(12).items_center().bg(t.chrome).text_size(11.8)
       .when(edge === "top", el => el.border_t(1).border_color(t.border))
       .when(edge === "bottom", el => el.border_b(1).border_color(t.border))
-      .on_mouse_down("left", (e, cx) => { this.anchor = e.bounds; cx.stop_propagation(); })
-      .on_click(() => this.open())
+      .on_mouse_down("left", (e, cx) => { this.anchor = e.bounds; this.pressed = Date.now(); cx.stop_propagation(); })
+      .on_click(() => this.toggle())
       .tooltip(tip)
       .child(image("icons/claude.svg").size(14).flex_none().opacity(stale ? 0.5 : 1))
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(u?.error ? "no data" : "…")))

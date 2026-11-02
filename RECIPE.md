@@ -24,7 +24,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 - Fetches on start, then at most every 5 minutes (a 60-second timer checks when the last fetch started). Every copy shares one result through shared state `"claude-usage"`, and one fetch at a time: a fetch writes `checked` and `started` there before its request and `finished` after, so several bars or a bar and the popup don't fetch twice. A fetch counts as in progress until it finishes or for 45 seconds (longer than the runtime's 30-second fetch timeout), so a request that never settles can't block the next one. One that expires unfinished (the popup closed on it, the layout switched, the app quit) is tried again at the timer's next check rather than after the 5 minutes, which also means a truly hung request is retried about once a minute. A fetch that ends after a newer one started is dropped.
 - Stale data (an error, or no successful fetch for 12 minutes) keeps the last numbers but greys the meters to `dim`, drops the ghost fill and dims the icon to 50%. The 12 minutes are one missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
 - Hover shows a tooltip with each bar limit's name, percentage and reset time, plus the last error.
-- Click opens the popup above the bar. Refresh fetches at once, unless a fetch is already in progress (then it reads "Refreshing…" until that one lands). Esc closes it.
+- Click opens the popup above the bar, and clicking the bar again closes it. Refresh fetches at once, unless a fetch is already in progress (then it reads "Refreshing…" until that one lands). Esc or a click elsewhere also closes it.
 - Agent statuses play no part; there are no animations.
 
 ## Built from
@@ -56,6 +56,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 - The API reports resets a fraction of a second before the hour; round to the minute before printing, or "16:59" shows instead of "17:00".
 - The bar's click handler stops the mouse-down so a `window_drag` status bar doesn't swallow the click.
 - A popup without `at` opens at the pointer and Herdr pushes it back into the window, over the bar. Its height can't be measured before it opens, so the popup is a frameless box of 120 + 90 px per limit (at least 3), capped to the space above the bar, with the card drawn by the mod and pinned to the box's bottom. Herdr sizes a popup to its content, so the root needs an explicit `.h(height)`, not `size_full()`. `at` and the bar's mouse-down `bounds` are in zoomed px, while `width`/`height` are at zoom 1: multiply by `settings().zoom`. Clicks on the empty top of the box don't close the popup.
+- Herdr closes a popup on a press outside it and lets that press through, so a click on the bar would close the popup and open it again. The popup's `close()` stamps `Date.now()` in shared state `"claude-usage.popup-closed"`, and the bar doesn't open it when its own press is within 250 ms of that stamp. The two land in one event, 1 ms apart at most when measured. A popup closed by Esc or a click elsewhere is long past that window, so the next click on the bar opens it.
 - Times are 24-hour and local; days are English.
 
 ## Done when
@@ -63,6 +64,6 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 - `herdr-app check mods/claude-usage` passes.
 - With Claude Code logged in, the bar shows `5h` and `7d` meters with the same percentages as Claude Code's `/usage`.
 - The ghost fill of `5h` grows over the session and resets with it.
-- Clicking the bar opens the 300px popup with every limit and its reset time; Refresh updates the footer's time.
+- Clicking the bar opens the 300px popup with every limit and its reset time; Refresh updates the footer's time; clicking the bar again closes it and the next click opens it.
 - Moving the credentials file away turns the meters grey within a fetch and the popup footer reads "fetch failed: no Claude Code login found"; putting it back recovers.
 - `herdr-app status` shows no errors from the mod.
