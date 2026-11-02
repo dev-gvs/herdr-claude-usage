@@ -54,8 +54,7 @@ async function refresh() {
   const prev = shared(KEY) ?? {};
   if (pending(prev)) return;
   const started = new Date().toISOString();
-  // `checked` is written before the request: the 5-minute gate sees the attempt from every
-  // copy, and a stuck attempt is retried after 5 minutes instead of on every tick.
+  // `checked` is written before the request, so the 5-minute gate sees the attempt from every copy.
   setShared(KEY, { ...prev, checked: started, started });
   let result;
   try {
@@ -121,8 +120,11 @@ export default class ClaudeUsage extends View {
   init(_props, cx) {
     if (props()?.overlay) return;
     const tick = cx => {
-      const last = Date.parse(shared(KEY)?.checked ?? "") || 0;
-      if (Date.now() - last >= EVERY) cx.spawn(async () => refresh());
+      const u = shared(KEY);
+      // An attempt that expired unfinished was most likely cancelled with its copy (popup closed,
+      // layout switched, app quit), so nothing will land and the 5 minutes aren't worth waiting out.
+      const abandoned = at(u?.started) > at(u?.finished) && !pending(u);
+      if (abandoned || Date.now() - at(u?.checked) >= EVERY) cx.spawn(async () => refresh());
       cx.notify();
     };
     cx.timer.every(60e3, tick);
