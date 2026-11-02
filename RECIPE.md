@@ -49,7 +49,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 ## Watch out
 
 - **The mod reads files outside its folder and reaches the network**: Claude Code's credentials file, and Anthropic's API with that token.
-- The usage endpoint is the one Claude Code's `/usage` uses; it is not a documented public API and its shape can change. Keep both response shapes.
+- The usage endpoint is the one Claude Code's `/usage` uses; it is not a documented public API and its shape can change. Keep both response shapes. A 200 with no usable limit counts as a failed fetch, so the last numbers stay and the error shows.
 - Credentials as a file is how Claude Code stores them on Linux and Windows. On macOS it keeps them in the Keychain, so there is no file and the bar shows `no data` ("no Claude Code login found"). A macOS build would read the token with `exec("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"])`.
 - An expired token is reported, not refreshed: "token expired, use Claude Code to refresh it". Using Claude Code refreshes it, and the next fetch recovers.
 - `~/.claude-work` is a second Claude Code config dir (`CLAUDE_CONFIG_DIR`); a missing one is skipped. Add or remove dirs in `token()`.

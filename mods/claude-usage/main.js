@@ -62,7 +62,10 @@ async function refresh() {
       headers: { Authorization: `Bearer ${await token()}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    result = { fetched: started, error: null, windows: windowsOf(await res.json()) };
+    const windows = windowsOf(await res.json());
+    // A 200 with nothing usable means the undocumented API changed shape: failing keeps the last numbers and shows why.
+    if (!windows.length) throw new Error("no usage limits in the response");
+    result = { fetched: started, error: null, windows };
   } catch (e) {
     result = { error: String(e?.message ?? e) };
   }
