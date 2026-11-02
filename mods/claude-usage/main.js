@@ -28,30 +28,48 @@ async function token() {
   return found[0].accessToken;
 }
 
+// Percentages are floored, as Claude Code's /usage does, so both show the same number and a
+// value crosses the 80/95 colour thresholds where the raw one does. A limit without a number is
+// left out, as /usage skips it, rather than shown as a healthy 0%.
 function windowsOf(data) {
   if (Array.isArray(data.limits)) {
-    return data.limits.map(l => {
+    return data.limits.filter(l => typeof l.percent === "number").map(l => {
       const model = l.scope?.model?.display_name;
-      return { kind: l.kind, model, used: l.percent, resets_at: l.resets_at };
+      return { kind: l.kind, model, used: Math.floor(l.percent), resets_at: l.resets_at };
     });
   }
   return [["five_hour", "session"], ["seven_day", "weekly_all"]]
     .filter(([k]) => typeof data[k]?.utilization === "number")
-    .map(([k, kind]) => ({ kind, used: data[k].utilization, resets_at: data[k].resets_at }));
+    .map(([k, kind]) => ({ kind, used: Math.floor(data[k].utilization), resets_at: data[k].resets_at }));
 }
+
+const at = s => Date.parse(s ?? "") || 0;
+// A fetch is stamped in shared state when it starts, so every copy (the bar, the popup, a second
+// bar) sees it. It counts as in progress until it finishes or for 45 s, longer than the runtime's
+// 30 s fetch timeout, so a request that never settles can't block the next one for good.
+const PENDING = 45e3;
+const pending = u => at(u?.started) > at(u?.finished) && Date.now() - at(u?.started) < PENDING;
 
 async function refresh() {
   const prev = shared(KEY) ?? {};
-  const now = new Date().toISOString();
+  if (pending(prev)) return;
+  const started = new Date().toISOString();
+  // `checked` is written before the request, so the 5-minute gate sees the attempt from every copy.
+  setShared(KEY, { ...prev, checked: started, started });
+  let result;
   try {
     const res = await fetch(USAGE_URL, {
       headers: { Authorization: `Bearer ${await token()}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    setShared(KEY, { checked: now, fetched: now, error: null, windows: windowsOf(await res.json()) });
+    result = { fetched: started, error: null, windows: windowsOf(await res.json()) };
   } catch (e) {
-    setShared(KEY, { ...prev, checked: now, error: String(e?.message ?? e) });
+    result = { error: String(e?.message ?? e) };
   }
+  // A newer attempt started while this one hung: its result wins, this one is dropped.
+  const now = shared(KEY) ?? {};
+  if (now.started !== started) return;
+  setShared(KEY, { ...now, ...result, finished: new Date().toISOString() });
 }
 
 const short = w => ({ session: "5h", weekly_all: "7d" })[w.kind] ?? `7d ${w.model ?? ""}`.trim();
@@ -102,8 +120,11 @@ export default class ClaudeUsage extends View {
   init(_props, cx) {
     if (props()?.overlay) return;
     const tick = cx => {
-      const last = Date.parse(shared(KEY)?.checked ?? "") || 0;
-      if (Date.now() - last >= EVERY) cx.spawn(async () => refresh());
+      const u = shared(KEY);
+      // An attempt that expired unfinished was most likely cancelled with its copy (popup closed,
+      // layout switched, app quit), so nothing will land and the 5 minutes aren't worth waiting out.
+      const abandoned = at(u?.started) > at(u?.finished) && !pending(u);
+      if (abandoned || Date.now() - at(u?.checked) >= EVERY) cx.spawn(async () => refresh());
       cx.notify();
     };
     cx.timer.every(60e3, tick);
@@ -161,8 +182,11 @@ export default class ClaudeUsage extends View {
       .child(h_flex().justify_between().items_center()
         .child(h_flex().gap(8).items_center().child(image("icons/claude.svg").size(16))
           .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Claude Usage")))
-        .child(div().id("refresh").px(6).py(2).rounded(5).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
-          .on_click((_e, cx) => cx.spawn(async () => refresh())).child("Refresh")))
+        // While any copy's fetch is in progress, Refresh says so instead of starting a second one.
+        .child(pending(u)
+          ? div().id("refresh").px(6).py(2).text_color(t.dim).child("Refreshing…")
+          : div().id("refresh").px(6).py(2).rounded(5).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+            .on_click((_e, cx) => cx.spawn(async () => refresh())).child("Refresh")))
       .children((u?.windows ?? []).map(w => v_flex().gap(6)
         .child(h_flex().justify_between().items_end()
           .child(div().text_color(t.foreground).child(long(w)))
